@@ -1,0 +1,11 @@
+extends ../../views/layout
+
+block content
+  h1 Log In
+  form(method="post", action="/login", name="login")
+    label Enter your name
+    input(type="text", name="student")
+    input(type="submit", name="login", value="Log in")
+
+  a(href="/auth/github") Login with Github
+    
