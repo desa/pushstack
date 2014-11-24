@@ -1,43 +1,30 @@
 var _ = require('underscore');
-//var bodyParser = require('body-parser');
-var express = require('express');
 var fs = require('fs');
 var logfmt = require("logfmt");
 
-var redis = require('redis');
+var bodyParser = require('body-parser');
+var express = require('express');
+
 var session = require('express-session');
 var RedisStore = require("connect-redis")(session);
 var stylus = require('stylus');
-var url = require('url');
 
-
-function herokuRedisStore() {
-  var redisOptions;
-  if (!process.env.REDISTOGO_URL) {
-    redisOptions = {
-      host: '127.0.0.1',
-      port: 6379
-    };
-  } else {
-    var redisURL = url.parse(process.env.REDISTOGO_URL);
-    var redisAuth = redisURL.auth.split(":");
-    redisOptions = {
-      host: redisURL.hostname,
-      port: redisURL.port,
-      db: redisAuth[0],
-      pass: redisAuth[1],
-      ttl: 7200 
-    };
-  }
-  return new RedisStore(redisOptions);
-}
-
-
+var debug = require('debug')('pushstack:server');
 var port = Number(process.env.PORT || 5000);
+
 var app = express();
 
+var h = require(__dirname + "/lib/helpers")(app);
+var errors = require(__dirname + "/lib/errors")(app);
+
 app.use(logfmt.requestLogger());
-//app.use(bodyParser());
+
+
+// parse application/x-www-form-urlencoded
+app.use(bodyParser.urlencoded({ extended: false }))
+
+// parse application/json
+app.use(bodyParser.json())
 
 app.use(stylus.middleware({
   src: __dirname + "/assets",
@@ -53,14 +40,17 @@ app.use(stylus.middleware({
 
 app.use(express.static(__dirname + "/public"));
 app.set('view engine', 'jade');
+app.set('redis', h.redisClient());
 
 if (process.env.NODE_ENV === "production") {
-
   app.set("host", (process.env.HOST || "pushstack.herokuapp.com"));
   app.use(session({
     secret: (process.env.SESSION_SECRET || "my secret"),
     fingerprint: function(){},
-    store: herokuRedisStore(),
+    store: new RedisStore({
+      client: app.get('redis'),
+      db: 1
+    }),
     cookie: {
       domain: app.get('host'),
       secure: true,
@@ -71,7 +61,10 @@ if (process.env.NODE_ENV === "production") {
 } else {
   app.set('host', (process.env.HOST || 'localhost'));
   app.use(session({
-    store: herokuRedisStore(),
+    store: new RedisStore({
+      client: app.get('redis'),
+      db: 1
+    }),
     secret: "my secret",
     cookie: {httpOnly: true},
     key: 'pushstack-development.sid'
@@ -79,18 +72,12 @@ if (process.env.NODE_ENV === "production") {
 };
 
 var pages = ['sign-in', 'q-and-a'];
-for (var i = 0; i < pages.length; i++) {
-  require(__dirname + "/pages/" + pages[i] + "/routes")(app);
-};
-
-app.use(function(err, req, res, next) {
-  if (typeof err !== 'undefined') {
-    console.error("Unknown error: ", err);
-    res.status(err.statusCode || 500);
-    return res.send("Unknown error");
-  }
-  return next();
+_.each(pages, function(page) {
+  require(__dirname + "/pages/" + page + "/routes")(app);
 });
+
+
+app.use(errors.handler);
 
 app.listen(port, function() {
   console.log("Listening on " + port);
