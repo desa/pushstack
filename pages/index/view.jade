@@ -1,0 +1,8 @@
+block content
+  if session.message
+    p!= session.message
+  h1 Welcome! #{session.student}
+  ul.links
+    li.link: a(href="/logout") Logout
+    li.link: a(href="/sign-in") Sign In for today
+    li.link: a(href="/q-and-a") Q and A's
